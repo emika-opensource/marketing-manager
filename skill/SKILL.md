@@ -254,6 +254,25 @@ PUT /api/budget — Update budget
 GET /api/analytics — Full overview with all metrics
 ```
 
+## What's Real vs Simulated
+
+**Real/Functional:**
+- Brand profile CRUD, audience segments, campaign data entry, influencer management + scoring
+- Creative generation via fal.ai (requires FAL_KEY)
+- Budget tracking, channel management, analytics aggregation
+- Deal management with human-in-the-loop approval
+
+**Reference/Tracking Only (no live API integration):**
+- Ad account "connections" — stores account IDs for reference, no OAuth or real platform connection
+- Campaign metrics — manually entered, not pulled from ad platforms
+- Channel performance data — manually entered
+- Influencer search — returns guidance suggestions, not real search results
+
+**Not implemented:**
+- Notifications, file uploads (multer configured but unused), multi-user auth, data import/export
+
+**Important:** Do NOT tell users their ad accounts are "connected" or "syncing." They are reference entries only. Be transparent about this.
+
 ## Proactive Opportunities
 Regularly suggest:
 - Seasonal campaigns (holidays, industry events)

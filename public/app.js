@@ -6,13 +6,16 @@ const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 const content = () => $('#content');
 
-// --- API ---
+// --- API (with error handling) ---
 const api = {
-  async get(url) { const r = await fetch(url); return r.json(); },
-  async post(url, data) { const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }); return r.json(); },
-  async put(url, data) { const r = await fetch(url, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }); return r.json(); },
-  async del(url) { const r = await fetch(url, { method:'DELETE' }); return r.json(); }
+  async get(url) { const r = await fetch(url); if(!r.ok) throw new Error(`GET ${url} failed: ${r.status}`); return r.json(); },
+  async post(url, data) { const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }); if(!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error || `POST ${url} failed: ${r.status}`); } return r.json(); },
+  async put(url, data) { const r = await fetch(url, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }); if(!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error || `PUT ${url} failed: ${r.status}`); } return r.json(); },
+  async del(url) { const r = await fetch(url, { method:'DELETE' }); if(!r.ok) throw new Error(`DELETE ${url} failed: ${r.status}`); return r.json(); }
 };
+
+function showLoading() { content().innerHTML = '<div class="spinner"></div>'; }
+function showError(msg) { content().innerHTML = `<div class="empty-state"><p style="color:var(--red)">⚠ ${esc(msg)}</p><button class="btn btn-sm" onclick="navigate()">Retry</button></div>`; }
 
 // --- TOAST ---
 function toast(msg, type='success') {
@@ -69,12 +72,142 @@ function navigate() {
 }
 window.addEventListener('hashchange', navigate);
 
+// ===================== SETUP WIZARD =====================
+async function checkFirstRun() {
+  try {
+    const brand = await api.get('/api/brand');
+    return !brand.name;
+  } catch { return true; }
+}
+
+function showSetupWizard() {
+  content().innerHTML = `
+    <div class="page-header"><h1>Welcome to Marketing Command Center</h1><p>Let's get you set up in 3 quick steps</p></div>
+    <div class="card" style="max-width:640px;margin:0 auto">
+      <div class="pipeline" style="margin-bottom:24px">
+        <div class="pipeline-stage active" id="wiz-step-1">1. Brand</div>
+        <div class="pipeline-stage" id="wiz-step-2">2. Audience</div>
+        <div class="pipeline-stage" id="wiz-step-3">3. Budget</div>
+      </div>
+      <div id="wiz-body">
+        <div class="form-group"><label>Brand Name <span style="color:var(--red)">*</span></label><input class="form-input" id="wiz-brand-name" placeholder="Your company or product name"></div>
+        <div class="form-group"><label>Industry <span style="color:var(--red)">*</span></label><input class="form-input" id="wiz-brand-industry" placeholder="e.g. SaaS, E-commerce, Healthcare..."></div>
+        <div class="form-group"><label>Brief Description</label><textarea class="form-textarea" id="wiz-brand-desc" placeholder="What does your business do?" rows="2"></textarea></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
+        <button class="btn" id="wiz-back" onclick="wizBack()" style="display:none">Back</button>
+        <button class="btn btn-primary" id="wiz-next" onclick="wizNext()">Next →</button>
+      </div>
+    </div>
+  `;
+  window._wizStep = 1;
+}
+
+window.wizNext = async () => {
+  const step = window._wizStep;
+  if(step === 1) {
+    const name = $('#wiz-brand-name').value.trim();
+    const industry = $('#wiz-brand-industry').value.trim();
+    if(!name) { toast('Brand name is required', 'error'); return; }
+    if(!industry) { toast('Industry is required', 'error'); return; }
+    window._wizBrand = { name, industry, description: $('#wiz-brand-desc').value.trim() };
+    // Step 2
+    window._wizStep = 2;
+    $('#wiz-step-1').classList.remove('active'); $('#wiz-step-1').classList.add('done');
+    $('#wiz-step-2').classList.add('active');
+    $('#wiz-back').style.display = '';
+    $('#wiz-body').innerHTML = `
+      <div class="form-group"><label>Audience Name <span style="color:var(--red)">*</span></label><input class="form-input" id="wiz-aud-name" placeholder="e.g. Tech-savvy Millennials"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Age Range</label><input class="form-input" id="wiz-aud-age" placeholder="25-45"></div>
+        <div class="form-group"><label>Location</label><input class="form-input" id="wiz-aud-loc" placeholder="US, Europe..."></div>
+      </div>
+      <div class="form-group"><label>Interests (comma-separated)</label><input class="form-input" id="wiz-aud-interests" placeholder="technology, design, startups..."></div>
+    `;
+  } else if(step === 2) {
+    const audName = $('#wiz-aud-name').value.trim();
+    if(!audName) { toast('Audience name is required', 'error'); return; }
+    window._wizAud = { name: audName, age: $('#wiz-aud-age').value.trim(), location: $('#wiz-aud-loc').value.trim(), interests: $('#wiz-aud-interests').value };
+    // Step 3
+    window._wizStep = 3;
+    $('#wiz-step-2').classList.remove('active'); $('#wiz-step-2').classList.add('done');
+    $('#wiz-step-3').classList.add('active');
+    $('#wiz-next').textContent = 'Finish Setup ✓';
+    $('#wiz-body').innerHTML = `
+      <div class="form-group"><label>Monthly Marketing Budget ($) <span style="color:var(--red)">*</span></label><input class="form-input" id="wiz-budget" type="number" placeholder="5000"></div>
+      <div class="form-group"><label>Budget Period</label><select class="form-select" id="wiz-period"><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option></select></div>
+    `;
+  } else if(step === 3) {
+    const budgetVal = Number($('#wiz-budget').value);
+    if(!budgetVal || budgetVal <= 0) { toast('Please enter a valid budget', 'error'); return; }
+    $('#wiz-next').disabled = true; $('#wiz-next').textContent = 'Setting up...';
+    try {
+      const b = window._wizBrand;
+      await api.put('/api/brand', { name:b.name, industry:b.industry, description:b.description, values:[], tone:'', colors:{primary:'#f43f5e',secondary:'#1e1e2e',accent:'#c0c0c0'}, targetMarket:'', usp:'', competitors:[], guidelines:'' });
+      const a = window._wizAud;
+      const split = v => v.split(',').map(s=>s.trim()).filter(Boolean);
+      await api.post('/api/audiences', { name:a.name, description:'', priority:'primary', demographics:{ageRange:a.age,gender:'',location:a.location,income:'',education:''}, psychographics:{interests:split(a.interests),painPoints:[],goals:[],values:[]}, channels:[], size:'', buyingBehavior:'' });
+      await api.put('/api/budget', { total:budgetVal, spent:0, period:$('#wiz-period').value, allocated:{} });
+      toast('Setup complete! Welcome aboard 🎉');
+      navigate();
+    } catch(e) {
+      toast('Setup failed: ' + e.message, 'error');
+      $('#wiz-next').disabled = false; $('#wiz-next').textContent = 'Finish Setup ✓';
+    }
+  }
+};
+
+window.wizBack = () => {
+  if(window._wizStep === 2) { window._wizStep = 1; showSetupWizard(); }
+  else if(window._wizStep === 3) {
+    window._wizStep = 2;
+    $('#wiz-step-3').classList.remove('active');
+    $('#wiz-step-2').classList.remove('done'); $('#wiz-step-2').classList.add('active');
+    $('#wiz-next').textContent = 'Next →';
+    const a = window._wizAud || {};
+    $('#wiz-body').innerHTML = `
+      <div class="form-group"><label>Audience Name <span style="color:var(--red)">*</span></label><input class="form-input" id="wiz-aud-name" value="${esc(a.name||'')}" placeholder="e.g. Tech-savvy Millennials"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Age Range</label><input class="form-input" id="wiz-aud-age" value="${esc(a.age||'')}" placeholder="25-45"></div>
+        <div class="form-group"><label>Location</label><input class="form-input" id="wiz-aud-loc" value="${esc(a.location||'')}" placeholder="US, Europe..."></div>
+      </div>
+      <div class="form-group"><label>Interests (comma-separated)</label><input class="form-input" id="wiz-aud-interests" value="${esc(a.interests||'')}" placeholder="technology, design, startups..."></div>
+    `;
+  }
+};
+
 // ===================== DASHBOARD =====================
 route('dashboard', async () => {
+  showLoading();
+  try {
+  const isFirstRun = await checkFirstRun();
+  if(isFirstRun) { showSetupWizard(); return; }
   const data = await api.get('/api/analytics');
   const ip = data.influencerPipeline || {};
+  const brand = await api.get('/api/brand');
+  const audiences = await api.get('/api/audiences');
+  const channels = await api.get('/api/channels');
+  const budget = await api.get('/api/budget');
+  const hasBrand = !!brand.name;
+  const hasAudience = audiences.length > 0;
+  const hasChannel = channels.length > 0;
+  const hasBudget = (budget.total || 0) > 0;
+  const hasCampaign = data.activeCampaigns > 0 || (data.recentCampaigns||[]).length > 0;
+  const setupDone = hasBrand && hasAudience && hasChannel && hasBudget && hasCampaign;
+  const checklistHtml = setupDone ? '' : `
+    <div class="card" style="margin-bottom:24px;border-color:var(--accent)">
+      <div class="card-header"><h3>🚀 Getting Started</h3></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <a href="#brand" style="display:flex;align-items:center;gap:8px;color:${hasBrand?'var(--green)':'var(--text)'}">${hasBrand?'✅':'☐'} Set up your brand profile</a>
+        <a href="#brand" style="display:flex;align-items:center;gap:8px;color:${hasAudience?'var(--green)':'var(--text)'}">${hasAudience?'✅':'☐'} Define your target audience</a>
+        <a href="#channels" style="display:flex;align-items:center;gap:8px;color:${hasChannel?'var(--green)':'var(--text)'}">${hasChannel?'✅':'☐'} Add a marketing channel</a>
+        <a href="#budget" style="display:flex;align-items:center;gap:8px;color:${hasBudget?'var(--green)':'var(--text)'}">${hasBudget?'✅':'☐'} Set your budget</a>
+        <a href="#campaigns" style="display:flex;align-items:center;gap:8px;color:${hasCampaign?'var(--green)':'var(--text)'}">${hasCampaign?'✅':'☐'} Create your first campaign</a>
+      </div>
+    </div>`;
   content().innerHTML = `
     <div class="page-header"><h1>Dashboard</h1><p>Marketing overview at a glance</p></div>
+    ${checklistHtml}
     <div class="kpi-row">
       <div class="kpi-card kpi-accent"><div class="kpi-label">Total Spend</div><div class="kpi-value">${fmtMoney(data.totalSpent)}</div><div class="kpi-sub">of ${fmtMoney(data.budgetTotal)} budget</div></div>
       <div class="kpi-card kpi-green"><div class="kpi-label">Overall ROI</div><div class="kpi-value">${data.overallROI}%</div><div class="kpi-sub">across all channels</div></div>
@@ -126,10 +259,13 @@ route('dashboard', async () => {
       return `<div class="bar-row"><div class="bar-label">${esc(c.name)}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:var(--accent)">${c.roi}%</div></div><div class="bar-value">${fmtMoney(c.budget)}</div></div>`;
     }).join('');
   }
+  } catch(e) { showError('Failed to load dashboard: ' + e.message); }
 });
 
 // ===================== BRAND & ICP =====================
 route('brand', async () => {
+  showLoading();
+  try {
   const brand = await api.get('/api/brand');
   const audiences = await api.get('/api/audiences');
   content().innerHTML = `
@@ -164,6 +300,7 @@ route('brand', async () => {
   `;
   window.editBrand = () => editBrandModal(brand);
   window.addAudience = () => audienceModal();
+  } catch(e) { showError('Failed to load brand data: ' + e.message); }
 });
 
 function audienceCard(a) {
@@ -203,6 +340,8 @@ function editBrandModal(brand) {
     <div class="form-group"><label>Guidelines</label><textarea class="form-textarea" id="b-guide">${esc(brand.guidelines)}</textarea></div>
   `, `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveBrand()">Save</button>`);
   window.saveBrand = async () => {
+    if(!$('#b-name').value.trim()) { toast('Brand name is required', 'error'); return; }
+    try {
     await api.put('/api/brand', {
       name: $('#b-name').value, industry: $('#b-industry').value, description: $('#b-desc').value,
       tone: $('#b-tone').value, targetMarket: $('#b-market').value, usp: $('#b-usp').value,
@@ -212,6 +351,7 @@ function editBrandModal(brand) {
       guidelines: $('#b-guide').value
     });
     closeModal(); toast('Brand updated'); navigate();
+    } catch(e) { toast('Failed to save: ' + e.message, 'error'); }
   };
 }
 
@@ -238,6 +378,8 @@ function audienceModal(existing=null) {
     <div class="form-group"><label>Buying Behavior</label><input class="form-input" id="a-buying" value="${esc(a.buyingBehavior)}"></div>
   `, `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAudience('${existing?.id||''}')">${existing?'Update':'Create'}</button>`, 'modal-wide');
   window.saveAudience = async (id) => {
+    if(!$('#a-name').value.trim()) { toast('Audience name is required', 'error'); return; }
+    try {
     const split = v => v.split(',').map(s=>s.trim()).filter(Boolean);
     const data = {
       name: $('#a-name').value, description: $('#a-desc').value, priority: $('#a-priority').value,
@@ -247,6 +389,7 @@ function audienceModal(existing=null) {
     };
     if(id) await api.put('/api/audiences/'+id, data); else await api.post('/api/audiences', data);
     closeModal(); toast(id?'Audience updated':'Audience created'); navigate();
+    } catch(e) { toast('Failed to save: ' + e.message, 'error'); }
   };
 }
 
@@ -255,6 +398,8 @@ window.deleteAudience = async (id) => { if(!confirm('Delete this audience?')) re
 
 // ===================== AD ACCOUNTS =====================
 route('ads', async () => {
+  showLoading();
+  try {
   const accounts = await api.get('/api/ad-accounts');
   const guides = await api.get('/api/ad-accounts/guides');
   content().innerHTML = `
@@ -268,12 +413,12 @@ route('ads', async () => {
           <p style="color:var(--text-dim);font-size:13px">${g.campaignTypes.length} campaign types available</p>
           <div style="margin-top:12px;display:flex;gap:8px">
             <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();showGuide('${g.platform}')">Setup Guide</button>
-            <button class="btn btn-sm" onclick="event.stopPropagation();connectAdAccount('${g.platform}','${esc(g.name)}')">${acct ? 'Edit' : 'Connect'}</button>
+            <button class="btn btn-sm" onclick="event.stopPropagation();connectAdAccount('${g.platform}','${esc(g.name)}')">${acct ? 'Edit' : 'Track Account'}</button>
           </div>
         </div>`;
       }).join('')}
     </div>
-    <div class="card-header" style="margin-bottom:16px"><h3>Connected Accounts</h3><button class="btn btn-primary btn-sm" onclick="connectAdAccountCustom()">${icons.plus} Add Account</button></div>
+    <div class="card-header" style="margin-bottom:16px"><h3>Tracked Accounts</h3><span style="font-size:11px;color:var(--text-muted);margin-left:8px">(reference only — no live integration)</span><button class="btn btn-primary btn-sm" onclick="connectAdAccountCustom()" style="margin-left:auto">${icons.plus} Add Account</button></div>
     ${accounts.length===0 ? '<div class="empty-state"><p>No ad accounts connected. Click a platform above to get started.</p></div>' :
       `<table><tr><th>Platform</th><th>Account ID</th><th>Status</th><th>Last Sync</th><th></th></tr>
       ${accounts.map(a=>`<tr><td><span class="platform-badge ${platformClass(a.platform)}">${esc(a.platform)}</span></td><td>${esc(a.accountId)}</td><td><span class="badge ${badgeClass(a.status)}">${a.status}</span></td><td>${a.lastSync||'Never'}</td><td><button class="btn btn-sm btn-ghost btn-danger" onclick="deleteAdAccount('${a.id}')">${icons.trash}</button></td></tr>`).join('')}
@@ -310,20 +455,26 @@ route('ads', async () => {
       <div class="form-group"><label>Platform</label><select class="form-select" id="ad-platform"><option value="google-ads">Google Ads</option><option value="meta-ads">Meta Ads</option><option value="linkedin-ads">LinkedIn Ads</option><option value="tiktok-ads">TikTok Ads</option></select></div>
       <div class="form-group"><label>Account ID</label><input class="form-input" id="ad-acctid"></div>
       <div class="form-group"><label>Status</label><select class="form-select" id="ad-status"><option value="connected">Connected</option><option value="pending">Pending</option></select></div>
-    `, `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAdAccount($('#ad-platform')?.value)">Add</button>`);
+    `, `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAdAccount()">Add</button>`);
   };
 
   window.saveAdAccount = async (platform) => {
-    const p = platform || $('#ad-platform')?.value;
-    await api.post('/api/ad-accounts', { platform: p, accountId: $('#ad-acctid').value, status: $('#ad-status').value, config: {}, campaigns: [] });
-    closeModal(); toast('Ad account added'); navigate();
+    const p = platform || document.getElementById('ad-platform')?.value;
+    if(!$('#ad-acctid').value.trim()) { toast('Account ID is required', 'error'); return; }
+    try {
+      await api.post('/api/ad-accounts', { platform: p, accountId: $('#ad-acctid').value, status: $('#ad-status').value, config: {}, campaigns: [] });
+      closeModal(); toast('Ad account added'); navigate();
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
   };
 
-  window.deleteAdAccount = async (id) => { if(!confirm('Remove this ad account?')) return; await api.del('/api/ad-accounts/'+id); toast('Removed'); navigate(); };
+  window.deleteAdAccount = async (id) => { if(!confirm('Remove this ad account?')) return; try { await api.del('/api/ad-accounts/'+id); toast('Removed'); navigate(); } catch(e) { toast('Failed: '+e.message,'error'); } };
+  } catch(e) { showError('Failed to load ad accounts: ' + e.message); }
 });
 
 // ===================== CAMPAIGNS =====================
 route('campaigns', async () => {
+  showLoading();
+  try {
   const campaigns = await api.get('/api/campaigns');
   const audiences = await api.get('/api/audiences');
   content().innerHTML = `
@@ -370,6 +521,8 @@ route('campaigns', async () => {
   };
 
   window.saveCampaign = async () => {
+    if(!$('#c-name').value.trim()) { toast('Campaign name is required', 'error'); return; }
+    try {
     await api.post('/api/campaigns', {
       name: $('#c-name').value, platform: $('#c-platform').value, type: $('#c-type').value,
       budget: Number($('#c-budget').value), spent: 0, status: $('#c-status').value,
@@ -377,9 +530,11 @@ route('campaigns', async () => {
       targeting: {}, creatives: [], metrics: { impressions:0, clicks:0, conversions:0, ctr:0, cpc:0, roas:0 }
     });
     closeModal(); toast('Campaign created'); navigate();
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
   };
 
-  window.deleteCampaign = async (id) => { if(!confirm('Delete campaign?')) return; await api.del('/api/campaigns/'+id); toast('Deleted'); navigate(); };
+  window.deleteCampaign = async (id) => { if(!confirm('Delete campaign?')) return; try { await api.del('/api/campaigns/'+id); toast('Deleted'); navigate(); } catch(e) { toast('Failed: '+e.message,'error'); } };
+  } catch(e) { showError('Failed to load campaigns: ' + e.message); }
 });
 
 function campaignRow(c) {
@@ -398,6 +553,8 @@ function campaignRow(c) {
 
 // ===================== INFLUENCERS =====================
 route('influencers', async () => {
+  showLoading();
+  try {
   const influencers = await api.get('/api/influencers');
   content().innerHTML = `
     <div class="page-header"><h1>Influencers</h1><p>Discover, score, and manage influencer partnerships</p></div>
@@ -428,6 +585,7 @@ route('influencers', async () => {
   };
 
   window.addInfluencer = () => influencerModal();
+  } catch(e) { showError('Failed to load influencers: ' + e.message); }
 });
 
 function infRow(i) {
@@ -461,6 +619,8 @@ function influencerModal(existing=null) {
   `, `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveInfluencer('${existing?.id||''}')">${existing?'Update':'Add'}</button>`, 'modal-wide');
 
   window.saveInfluencer = async (id) => {
+    if(!$('#i-name').value.trim()) { toast('Name is required', 'error'); return; }
+    try {
     const data = {
       name: $('#i-name').value, handle: $('#i-handle').value.replace('@',''), platform: $('#i-platform').value,
       status: $('#i-status').value, followers: Number($('#i-followers').value), engagementRate: Number($('#i-engagement').value),
@@ -471,6 +631,7 @@ function influencerModal(existing=null) {
     };
     if(id) await api.put('/api/influencers/'+id, data); else await api.post('/api/influencers', data);
     closeModal(); toast(id?'Updated':'Influencer added'); navigate();
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
   };
 }
 
@@ -478,6 +639,8 @@ window.deleteInfluencer = async (id) => { if(!confirm('Delete influencer?')) ret
 
 // ===================== INFLUENCER DETAIL =====================
 route('influencer-detail', async (id) => {
+  showLoading();
+  try {
   const inf = await api.get('/api/influencers/'+id);
   if(inf.error) { content().innerHTML = '<div class="empty-state"><p>Influencer not found</p></div>'; return; }
   const infCampaigns = (await api.get('/api/influencer-campaigns')).filter(c=>c.influencerId===id);
@@ -594,16 +757,22 @@ route('influencer-detail', async (id) => {
 
   window.approveDeal = async (dealId) => {
     if(!confirm('Approve this deal? This confirms you will proceed with payment.')) return;
-    await api.post('/api/influencer-campaigns/'+dealId+'/approve', {});
-    toast('Deal approved'); navigate();
+    try { await api.post('/api/influencer-campaigns/'+dealId+'/approve', {}); toast('Deal approved'); navigate(); } catch(e) { toast('Failed: '+e.message,'error'); }
   };
+  } catch(e) { showError('Failed to load influencer: ' + e.message); }
 });
 
 // ===================== CREATIVE STUDIO =====================
 route('creative', async () => {
+  showLoading();
+  try {
   const creatives = await api.get('/api/creatives');
+  const config = await api.get('/api/config');
+  const hasFalKey = !!(config.falKey && !config.falKey.startsWith('...'));
+  const falBanner = hasFalKey ? '' : `<div class="card" style="margin-bottom:16px;border-color:var(--yellow)"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px">⚠️</span><div><strong>fal.ai API key not configured</strong><br><span style="color:var(--text-dim);font-size:13px">Set up your API key in <a href="#settings">Settings</a> to generate creatives.</span></div></div></div>`;
   content().innerHTML = `
     <div class="page-header"><h1>Creative Studio</h1><p>Generate and manage marketing visuals</p></div>
+    ${falBanner}
     <div class="filter-bar">
       <select class="form-select" id="fc-type" onchange="filterCreatives()"><option value="">All Types</option><option value="image">Image</option><option value="video">Video</option></select>
       <select class="form-select" id="fc-platform" onchange="filterCreatives()"><option value="">All Platforms</option><option value="instagram">Instagram</option><option value="facebook">Facebook</option><option value="linkedin">LinkedIn</option><option value="google-ads">Google Ads</option><option value="tiktok">TikTok</option><option value="blog">Blog</option></select>
@@ -668,7 +837,8 @@ route('creative', async () => {
 
   window.approveCreative = async (id) => { await api.put('/api/creatives/'+id, {status:'approved'}); toast('Approved'); navigate(); };
   window.rejectCreative = async (id) => { await api.put('/api/creatives/'+id, {status:'rejected'}); toast('Rejected'); navigate(); };
-  window.deleteCreative = async (id) => { if(!confirm('Delete?')) return; await api.del('/api/creatives/'+id); toast('Deleted'); navigate(); };
+  window.deleteCreative = async (id) => { if(!confirm('Delete?')) return; try { await api.del('/api/creatives/'+id); toast('Deleted'); navigate(); } catch(e) { toast('Failed: '+e.message,'error'); } };
+  } catch(e) { showError('Failed to load creatives: ' + e.message); }
 });
 
 function creativeCard(c) {
@@ -695,6 +865,8 @@ function creativeCard(c) {
 
 // ===================== CHANNELS =====================
 route('channels', async () => {
+  showLoading();
+  try {
   const channels = await api.get('/api/channels');
   content().innerHTML = `
     <div class="page-header"><h1>Channels</h1><p>Manage marketing channels and track performance</p></div>
@@ -707,8 +879,9 @@ route('channels', async () => {
 
   window.addChannel = () => channelModal();
   window.editChannelById = async (id) => { const chs = await api.get('/api/channels'); const ch = chs.find(x=>x.id===id); if(ch) channelModal(ch); };
-  window.deleteChannel = async (id) => { if(!confirm('Delete channel?')) return; await api.del('/api/channels/'+id); toast('Deleted'); navigate(); };
-  window.toggleChannel = async (id, status) => { await api.put('/api/channels/'+id, { status: status==='active'?'paused':'active' }); toast('Updated'); navigate(); };
+  window.deleteChannel = async (id) => { if(!confirm('Delete channel?')) return; try { await api.del('/api/channels/'+id); toast('Deleted'); navigate(); } catch(e) { toast('Failed: '+e.message,'error'); } };
+  window.toggleChannel = async (id, status) => { try { await api.put('/api/channels/'+id, { status: status==='active'?'paused':'active' }); toast('Updated'); navigate(); } catch(e) { toast('Failed: '+e.message,'error'); } };
+  } catch(e) { showError('Failed to load channels: ' + e.message); }
 });
 
 function channelCard(ch) {
@@ -749,14 +922,19 @@ function channelModal(existing=null) {
   `, `<button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveChannel('${existing?.id||''}')">${existing?'Update':'Create'}</button>`);
 
   window.saveChannel = async (id) => {
+    if(!$('#ch-name').value.trim()) { toast('Channel name is required', 'error'); return; }
+    try {
     const data = { name:$('#ch-name').value, type:$('#ch-type').value, platform:$('#ch-platform').value, status:$('#ch-status').value, budget:Number($('#ch-budget').value), notes:$('#ch-notes').value, performance:existing?.performance||{reach:0,engagement:0,conversions:0,roi:0} };
     if(id) await api.put('/api/channels/'+id, data); else await api.post('/api/channels', data);
     closeModal(); toast(id?'Updated':'Channel created'); navigate();
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
   };
 }
 
 // ===================== BUDGET =====================
 route('budget', async () => {
+  showLoading();
+  try {
   const budget = await api.get('/api/budget');
   const channels = await api.get('/api/channels');
   const remaining = (budget.total||0) - (budget.spent||0);
@@ -799,13 +977,18 @@ route('budget', async () => {
   };
 
   window.saveBudget = async () => {
+    try {
     await api.put('/api/budget', { total: Number($('#bud-total').value), spent: Number($('#bud-spent').value), period: $('#bud-period').value, allocated: budget.allocated||{} });
     closeModal(); toast('Budget updated'); navigate();
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
   };
+  } catch(e) { showError('Failed to load budget: ' + e.message); }
 });
 
 // ===================== SETTINGS =====================
 route('settings', async () => {
+  showLoading();
+  try {
   const config = await api.get('/api/config');
   content().innerHTML = `
     <div class="page-header"><h1>Settings</h1><p>Configure integrations and preferences</p></div>
@@ -821,9 +1004,12 @@ route('settings', async () => {
   `;
 
   window.saveConfig = async () => {
+    try {
     await api.put('/api/config', { falKey: $('#cfg-fal').value, notifications: $('#cfg-notif').checked });
     toast('Settings saved');
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
   };
+  } catch(e) { showError('Failed to load settings: ' + e.message); }
 });
 
 // --- INIT ---

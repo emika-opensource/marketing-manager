@@ -87,10 +87,7 @@ app.put('/api/brand', (req, res) => {
 // --- Audiences ---
 crudRoutes('audiences', 'audiences', []);
 
-// --- Ad Accounts ---
-crudRoutes('ad-accounts', 'ad-accounts', []);
-
-// --- Ad Account Guides ---
+// --- Ad Account Guides (MUST be before crudRoutes to avoid :id shadowing) ---
 app.get('/api/ad-accounts/guides', (req, res) => {
   res.json([
     {
@@ -258,6 +255,9 @@ app.get('/api/ad-accounts/guides', (req, res) => {
     }
   ]);
 });
+
+// --- Ad Accounts CRUD (after guides route) ---
+crudRoutes('ad-accounts', 'ad-accounts', []);
 
 // --- Campaigns ---
 crudRoutes('campaigns', 'campaigns', []);
@@ -431,7 +431,7 @@ app.post('/api/creatives/generate', async (req, res) => {
           items[i].url = result.video.url;
           items[i].status = 'ready';
         } else {
-          items[i].status = 'ready';
+          items[i].status = 'error';
           items[i].error = result.detail || 'Unknown response format';
         }
         writeData('creatives', items);
@@ -440,7 +440,7 @@ app.post('/api/creatives/generate', async (req, res) => {
       const items = readData('creatives', []);
       const i = items.findIndex(c => c.id === creative.id);
       if (i !== -1) {
-        items[i].status = 'ready';
+        items[i].status = 'error';
         items[i].error = err.message;
         writeData('creatives', items);
       }

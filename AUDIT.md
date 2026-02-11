@@ -234,3 +234,51 @@ The Marketing Manager has a **solid feature surface area** and a **polished dark
 Secondary priorities are fixing real bugs (route ordering, error statuses), adding error handling/validation, and being honest about what's a real integration vs. a data entry field.
 
 The SKILL.md is the strongest part of this repo — it gives the AI agent genuinely useful marketing knowledge. The code quality is acceptable for an MVP but has several bugs that need fixing before production use.
+
+---
+
+## Fixes Applied
+
+**Date:** 2026-02-11
+
+### 🔴 Critical Fixes
+
+1. **Added 3-step UI setup wizard** — First-time users (empty brand) now see a guided wizard: Brand (name + industry) → Audience (name + demographics) → Budget. Time-to-first-value reduced from "infinite" to ~60 seconds.
+
+2. **Fixed route ordering bug** — Moved `GET /api/ad-accounts/guides` route BEFORE `crudRoutes('ad-accounts', ...)` so the guides endpoint is no longer shadowed by the `:id` param route.
+
+3. **Fixed creative generation error status** — Changed `status = 'ready'` to `status = 'error'` in both the catch block and the unrecognized response format branch of the creative generation async handler.
+
+4. **Added client-side error handling** — All `api.get/post/put/del` methods now check `res.ok` and throw on failure. Every route handler is wrapped in try/catch with user-visible error states.
+
+5. **Added basic form validation** — Required fields enforced before submission: brand name, audience name, campaign name, influencer name, channel name, ad account ID, budget amount.
+
+### 🟡 High Impact Fixes
+
+6. **Added "Getting Started" checklist on dashboard** — When setup is incomplete, dashboard shows a checklist: brand, audience, channel, budget, campaign — with links to each page. Disappears when all are done.
+
+7. **Added loading spinners to all page transitions** — Every route handler now shows a spinner via `showLoading()` while fetching data.
+
+8. **FAL_KEY check on Creative Studio page load** — Shows a warning banner with link to Settings when fal.ai API key is not configured.
+
+9. **Fixed `saveAdAccount` onclick evaluation timing bug** — Replaced inline `$('#ad-platform')?.value` in onclick string attribute with a proper function call that reads the value at click time.
+
+### 🟢 Medium Impact Fixes
+
+10. **Honest labels for ad account connections** — Changed "Connect" button to "Track Account", "Connected Accounts" header to "Tracked Accounts" with "(reference only — no live integration)" note.
+
+11. **Compressed BOOTSTRAP.md** — Reduced from 10 questions to 3 essential questions. Added notes about the UI wizard, FAL_KEY requirement, and ad account limitations.
+
+12. **Updated SKILL.md with real vs simulated documentation** — Added a "What's Real vs Simulated" section so the AI knows which features have real integrations vs reference-only data entry, and instructs the AI to be transparent about limitations.
+
+13. **Added error handling to all delete/toggle/approve actions** — All destructive and state-changing operations now have try/catch with error toasts.
+
+### Summary of Changes
+
+| File | Changes |
+|------|---------|
+| `server.js` | Route ordering fix (guides before CRUD), creative error status fix |
+| `public/app.js` | Setup wizard, loading states, error handling, form validation, FAL_KEY check, saveAdAccount bug fix, honest labels |
+| `BOOTSTRAP.md` | Compressed to 3 questions, added notes about UI wizard and limitations |
+| `skill/SKILL.md` | Added "What's Real vs Simulated" section |
+| `AUDIT.md` | This fixes section |
